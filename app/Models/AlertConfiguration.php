@@ -14,9 +14,11 @@ class AlertConfiguration extends Model
     public $table = 'alert_configurations';
 
     protected $fillable = [
+        'type',
         'user_id',
         'symbols',
         'percentage',
+        'reversion_percentage',
         'direction',
         'time_duration',
         'time_duration_minutes',
@@ -26,6 +28,7 @@ class AlertConfiguration extends Model
         'last_run_at',
         'symbol_source',
     ];
+
 
     protected $casts = [
         'symbols' => 'array',
@@ -40,7 +43,9 @@ class AlertConfiguration extends Model
     {
         return $this->belongsToMany(
             User::class,
-            'alert_configuration_users'
+            'alert_configuration_users',
+            'alert_configuration_id',
+            'user_id'
         );
     }
 }
