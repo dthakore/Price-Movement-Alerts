@@ -6,10 +6,20 @@ use App\Models\AlertConfiguration;
 use App\Models\AlertConfigurationUser;
 use App\Models\AlertLog;
 use App\Models\Symbol;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class AlertConfigurationController extends Controller
 {
+    public function create()
+    {
+        $users = User::all();
+        $symbols = Symbol::pluck('symbol');
+
+        return redirect()->route('alerts.config');
+
+    }
+
     public function index()
     {
         if (auth()->user()->isAdmin()) {
@@ -20,7 +30,7 @@ class AlertConfigurationController extends Controller
                 ->latest()
                 ->get();
         }
-        $users = \App\Models\User::select('id', 'name', 'email')->get();
+        $users = User::select('id', 'name', 'email')->get();
 
         $symbols = Symbol::where(['exchange_id' => 1])->orderBy('id')->pluck('symbol');
 
@@ -88,6 +98,7 @@ class AlertConfigurationController extends Controller
     {
         //        dd($request);
         $request->validate([
+            'type' => 'required|string|max:255',
             'symbol_source' => 'required|in:1,2',
             'symbols' => 'nullable',
             'percentage' => 'required|numeric|min:0.1',
@@ -97,10 +108,13 @@ class AlertConfigurationController extends Controller
             'notify_users' => 'nullable|array',
         ]);
 
+    
         try {
 
             $alert = AlertConfiguration::create([
                 'user_id' => $request->user_id,
+                'type' => $request->type,
+                'reversion_percentage' => $request->reversion_percentage,
                 'symbol_source' => (int) $request->symbol_source,
                 'symbols' => $request->symbol_source == 2 ? $request->symbols : Symbol::where(['exchange_id' => 1])->orderBy('id')->pluck('symbol'),
                 'percentage' => $request->percentage,
@@ -121,11 +135,17 @@ class AlertConfigurationController extends Controller
                 }
             }
 
-            return back()->with('success', 'Alert configuration saved');
+            return redirect()->route('alerts.config.index')
+                ->with('success', 'Alert configuration saved');
 
         } catch (\Exception $e) {
             return back()->with('error', $e->getMessage());
         }
+
+        $request->validate([
+            'type' => 'required',
+            'reversion_percentage' => 'required_if:type,high reversion|nullable|numeric|min:0',
+        ]);
     }
 
     /**
