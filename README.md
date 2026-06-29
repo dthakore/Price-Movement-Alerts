@@ -1,6 +1,6 @@
 # Price Movement Alerts
 
-Standalone Laravel 9 app for monitoring Binance Futures price movements. Extracted from [CryptoPulse](../CryptoPulse) — includes alert configuration, notifications (email, Slack, FCM), funnel follow-up pipeline, and user authentication.
+Standalone Laravel 9 app for monitoring Binance Futures **price movements** and **volume spikes**. Extracted from [CryptoPulse](../CryptoPulse) — includes price alert configuration, funnel pipeline, volume spike watchlist, notifications (email, Slack, FCM), and user authentication.
 
 ## Requirements
 
@@ -48,7 +48,8 @@ Key variables in `.env`:
 - `users`, `personal_access_tokens` — auth
 - `alert_configurations`, `alert_logs`, `alert_funnel` — core alerts
 - `alert_configuration_users`, `alert_user_notification_logs` — subscriptions & email tracking
-- `symbols`, `exchanges` — symbol list for auto-source alerts
+- `symbols`, `exchanges` — symbol list for auto-source alerts & volume scan
+- `volume_alerts`, `volume_funnels` — volume spike detections
 - `cron_job_logs` — scheduler run history
 - `user_fcm_tokens` — mobile push tokens
 
@@ -82,14 +83,18 @@ Or add to system cron (every minute):
 
 | Command | Schedule | Description |
 |---------|----------|-------------|
-| `alerts:check` | Every 5 min | Scans configured symbols for price movement |
-| `funnel_alert:check` | Every 2 min | Follow-up checks on funnel symbols |
+| `alerts:check` | Every 5 min | Price movement alerts |
+| `funnel_alert:check` | Every 2 min | Funnel follow-up |
+| `volume:alerts` | Every 15 min | Volume spike detection |
+| `exchange:sync` | Daily | Refresh Binance symbol list |
 
 Run manually:
 
 ```bash
 php artisan alerts:check
 php artisan funnel_alert:check
+php artisan volume:alerts
+php artisan exchange:sync
 ```
 
 ## Queue workers (production)
@@ -114,7 +119,8 @@ php artisan queue:work --queue=funnel_alert
 | `/login` | Sign in |
 | `/logout` | Sign out |
 | `/alerts/config` | Alert rule configuration |
-| `/alerts/config/{id}/notifications` | Notification history |
+| `/alerts/config/{id}/notifications` | Price alert history |
+| `/volume-alerts` | Volume spike watchlist |
 | `/cron-logs` | Scheduler monitor (admin only) |
 
 ## API (Sanctum)
@@ -167,7 +173,6 @@ This extract does **not** include:
 
 - Bot trading / order management
 - Auto-bot-on-alert
-- Volume spike alerts
 - V2 alerts (Go / PostgreSQL)
 - WebSockets / real-time bot updates
 - CoinDCX integration

@@ -131,6 +131,13 @@ return [
             'level' => 'debug',
             'days' => 14,
         ],
+
+        'volume_alerts' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/volume_alerts.log'),
+            'level' => 'debug',
+            'days' => 14,
+        ],
     ],
 
 ];

@@ -14,6 +14,7 @@
 $cronMeta = [
     'alerts:check'       => ['label' => 'Price Alerts Check', 'exchange' => null, 'icon' => 'bi-bell',           'color' => 'text-danger'],
     'funnel_alert:check' => ['label' => 'Funnel Alert Check', 'exchange' => null, 'icon' => 'bi-funnel',         'color' => 'text-purple'],
+    'volume:alerts'      => ['label' => 'Volume Spike Check', 'exchange' => null, 'icon' => 'bi-activity',       'color' => 'text-warning'],
     'exchange:sync'      => ['label' => 'Exchange Sync',      'exchange' => null, 'icon' => 'bi-cloud-download', 'color' => 'text-secondary'],
 ];
 

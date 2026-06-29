@@ -64,6 +64,13 @@
                         </a>
                     </li>
 
+                    <li class="nav-item">
+                        <a class="nav-link {{ request()->routeIs('volume-alerts.*') ? 'active' : '' }}"
+                           href="{{ route('volume-alerts.index') }}">
+                            <i class="bi bi-activity me-1"></i> Volume Alerts
+                        </a>
+                    </li>
+
                     <li class="nav-item dropdown me-2">
                         <a class="nav-link position-relative" href="#" role="button" data-bs-toggle="dropdown">
                             <i class="bi bi-bell fs-5"></i>

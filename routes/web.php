@@ -46,6 +46,9 @@ Route::middleware('auth')->group(function () {
         [AlertConfigurationController::class, 'clear']
     )->name('alerts.notifications.clear');
 
+    Route::get('/volume-alerts', [\App\Http\Controllers\VolumeAlertController::class, 'index'])->name('volume-alerts.index');
+    Route::delete('/volume-alerts/clear-all', [\App\Http\Controllers\VolumeAlertController::class, 'clearAll'])->name('volume-alerts.clear');
+
     Route::get('/cron-logs', function (Request $request) {
         $query = CronJobLog::latest('start_time');
         if ($request->filled('job')) {
