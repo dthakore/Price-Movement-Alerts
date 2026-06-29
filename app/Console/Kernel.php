@@ -22,6 +22,11 @@ class Kernel extends ConsoleKernel
         $schedule->command('exchange:sync')
             ->daily()
             ->runInBackground();
+
+        $schedule->command('volume:alerts')
+            ->everyFifteenMinutes()
+            ->withoutOverlapping()
+            ->runInBackground();
     }
 
     protected function commands()
