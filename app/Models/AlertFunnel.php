@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -12,11 +13,13 @@ class AlertFunnel extends Model
     protected $fillable = [
         'alert_configuration_id',
         'symbol',
+        'high',
         'funnel_id',
-        'parent_id'
+        'parent_id',
     ];
 
     public $table = 'alert_funnel';
+
 
     public function configuration()
     {
@@ -26,5 +29,10 @@ class AlertFunnel extends Model
     public function parent()
     {
         return $this->belongsTo(AlertLog::class, 'parent_id');
+    }
+
+    protected function schedule(Schedule $schedule): void
+    {
+        $schedule->command('funnel_alert:check')->everyFiveMinutes();
     }
 }

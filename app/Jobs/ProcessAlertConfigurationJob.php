@@ -35,7 +35,7 @@ class ProcessAlertConfigurationJob implements ShouldQueue
         try {
             $logs = [];
             $configSymbols = $config->symbols ?? [];
-            $funnelSymbols = \App\Models\AlertFunnel::where(
+            $funnelSymbols = AlertFunnel::where(
                 'alert_configuration_id',
                 $config->id
             )->pluck('symbol')->toArray();
@@ -207,12 +207,30 @@ class ProcessAlertConfigurationJob implements ShouldQueue
                             'open_time' => $lastOpenTime,
                         ]);
 
-                        if ($alertLog->z_score_1d > 1.6 && $alertLog->z_score_2d > 1.6 && $alertLog->z_score_3d > 1) {
-                            AlertFunnel::create([
-                                'alert_configuration_id' => $config->id,
-                                'parent_id' => $alertLog->id,
-                                'symbol' => $coin,
-                            ]);
+                
+                        switch ($config->type) {
+
+                            case 'high reversion':
+                                AlertFunnel::create([
+                                    'alert_configuration_id' => $config->id,
+                                    'parent_id' => $alertLog->id,
+                                    'symbol' => $coin,
+                                ]);
+                                break;
+
+                            default:
+                                if (
+                                    $alertLog->z_score_1d > 1.6 &&
+                                    $alertLog->z_score_2d > 1.6 &&
+                                    $alertLog->z_score_3d > 1
+                                ) {
+                                    AlertFunnel::create([
+                                        'alert_configuration_id' => $config->id,
+                                        'parent_id' => $alertLog->id,
+                                        'symbol' => $coin,
+                                    ]);
+                                }
+                                break;
                         }
 
                         $logs[] = $alertLog;
@@ -283,23 +301,23 @@ class ProcessAlertConfigurationJob implements ShouldQueue
                 if ($config->notifyUsers->isNotEmpty()) {
                     $fcm = app(FcmNotificationService::class);
 
-                    $symbols  = collect($logs)->pluck('symbol')->unique()->implode(', ');
+                    $symbols = collect($logs)->pluck('symbol')->unique()->implode(', ');
                     $coinCount = collect($logs)->count();
-                    $title    = "Price Alert: {$config->id}";
-                    $body     = "{$coinCount} coin(s) triggered — {$symbols}";
+                    $title = "Price Alert: {$config->id}";
+                    $body = "{$coinCount} coin(s) triggered — {$symbols}";
 
                     foreach ($config->notifyUsers as $user) {
                         try {
                             $fcm->sendToUser($user->id, $title, $body, [
-                                'type'              => 'price_alert',
-                                'alert_config_id'   => $config->id,
-                                'symbols'           => $symbols,
-                                'triggered_count'   => $coinCount,
+                                'type' => 'price_alert',
+                                'alert_config_id' => $config->id,
+                                'symbols' => $symbols,
+                                'triggered_count' => $coinCount,
                             ]);
-                        } catch (\Throwable $fcmError) {
+                        } catch (Throwable $fcmError) {
                             Log::channel('price_alert')->error('FCM push failed', [
                                 'user_id' => $user->id,
-                                'error'   => $fcmError->getMessage(),
+                                'error' => $fcmError->getMessage(),
                             ]);
                         }
                     }

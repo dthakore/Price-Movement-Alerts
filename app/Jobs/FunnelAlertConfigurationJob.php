@@ -20,6 +20,8 @@ class FunnelAlertConfigurationJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    private const DROP_PCT = 0.30;
+
     public function __construct(public int $configId) {}
 
     public function handle(): void
@@ -68,105 +70,167 @@ class FunnelAlertConfigurationJob implements ShouldQueue
                 $lastLowPrice = (float) $klines[$last][3]; // last low
                 $closePrice = (float) $klines[$last][4]; // last close
                 $lastVoulme = (float) $klines[$last][5]; // last volume
+                Log::channel('funnel_alert')->info('Users Count: '.$config->notifyUsers->count());
+                Log::channel('funnel_alert')->info('Logs Count: '.count($logs));
                 Log::channel('funnel_alert')->info("Coin {$coin} open price {$openPrice} & close price {$closePrice} in last {$config->time_duration}");
 
                 if ($openPrice <= 0) {
                     return;
                 }
 
-                // ✅ % performance
-                $performance = (($closePrice - $openPrice) / $openPrice) * 100;
-                $performance = round($performance, 2);
-                Log::channel('funnel_alert')->info("Coin {$coin} performance - {$performance} in last {$config->time_duration}");
+                if (is_null($funnel->high) || $closePrice > $funnel->high) {
 
-                $triggered = false;
-
-                if ($config->direction === 1 && $performance >= $config->percentage) {
-                    $triggered = true;
-                }
-
-                if ($config->direction === 0 && abs($performance) >= $config->percentage && $performance < 0) {
-                    $triggered = true;
-                }
-                Log::channel('funnel_alert')->info("Coin {$coin} price triggered - ".($triggered ? 'yes' : 'no'));
-
-                if ($triggered) {
-
-                    $zScore1d = null;
-                    $zScore2d = null;
-                    $zScore3d = null;
-
-                    $zResponse = Http::timeout(10)->get($url, [
-                        'symbol' => strtoupper($coin),
-                        'interval' => '4h',
-                        'limit' => 18,
+                    $funnel->update([
+                        'high' => $closePrice,
                     ]);
 
-                    if ($zResponse->successful()) {
+                    Log::channel('funnel_alert')->info("High Updated : {$closePrice}");
 
-                        $zKlines = $zResponse->json();
+                    return;
+                }
 
-                        $closes = collect($zKlines)
-                            ->pluck(4)
-                            ->map(fn ($price) => (float) $price)
-                            ->values()
-                            ->toArray();
+                // ---------------------------------------------------------
+                // STEP 1: Check the 30% drop condition.
+                // If price has NOT dropped 30% from the high yet -> stop here.
+                // ---------------------------------------------------------
+                $dropLimit = $funnel->high * (1 - self::DROP_PCT);
 
-                        if (count($closes) >= 6) {
-                            $zScore1d = $this->calculateZScore(array_slice($closes, -6));
-                        }
+                if ($closePrice > $dropLimit) {
+                    Log::channel('funnel_alert')->info("No 30% drop yet. Current: {$closePrice}, Drop Limit: {$dropLimit}");
 
-                        if (count($closes) >= 12) {
-                            $zScore2d = $this->calculateZScore(array_slice($closes, -12));
-                        }
+                    return;
+                }
+                Log::channel('funnel_alert')->info('30% Drop Triggered');
 
-                        if (count($closes) >= 18) {
-                            $zScore3d = $this->calculateZScore(array_slice($closes, -18));
-                        }
+                // ---------------------------------------------------------
+                // STEP 2: Calculate everything needed for the DB entry.
+                // (must happen BEFORE AlertLog::create, since these
+                // variables are used inside it)
+                // ---------------------------------------------------------
+
+                // Performance from High
+                $performance = round(
+                    (($closePrice - $funnel->high) / $funnel->high) * 100,
+                    2);
+
+                $zScore1d = null;
+                $zScore2d = null;
+                $zScore3d = null;
+
+                $zResponse = Http::timeout(10)->get($url, [
+                    'symbol' => strtoupper($coin),
+                    'interval' => '4h',
+                    'limit' => 18,
+                ]);
+
+                if ($zResponse->successful()) {
+
+                    $zKlines = $zResponse->json();
+
+                    $closes = collect($zKlines)
+                        ->pluck(4)
+                        ->map(fn ($price) => (float) $price)
+                        ->values()
+                        ->toArray();
+
+                    if (count($closes) >= 6) {
+                        $zScore1d = $this->calculateZScore(array_slice($closes, -6));
                     }
 
-                    $momentum = $this->calculateMomentum($klines);
+                    if (count($closes) >= 12) {
+                        $zScore2d = $this->calculateZScore(array_slice($closes, -12));
+                    }
 
-                    $candle = match (true) {
-                        $lastOpenPrice > $closePrice => 1,
-                        $lastOpenPrice < $closePrice => 0,
-                        default => null,
-                    };
-
-                    $existingLog = AlertLog::selectRaw('MAX(high) as max_high, MIN(low) as min_low')
-                        ->where('alert_configuration_id', $config->id)
-                        ->where('symbol', $coin)
-                        ->where('source_job', 'funnel_alert')
-                        ->first();
-
-                    $alertLog = AlertLog::create([
-                        'alert_configuration_id' => $config->id,
-                        'parent_id' => $funnel->parent_id,
-                        'symbol' => $coin,
-                        'performance' => $performance,
-                        'price_from' => $openPrice,
-                        'price_to' => $closePrice,
-                        'high' => $lastHighPrice,
-                        'low' => $lastLowPrice,
-                        'high' => max($lastHighPrice, (float) ($existingLog->max_high ?? $lastHighPrice)),
-                        'low' => min($lastLowPrice, (float) ($existingLog->min_low ?? $lastLowPrice)),
-                        'volume' => $lastVoulme,
-                        'z_score_1d' => $zScore1d,
-                        'z_score_2d' => $zScore2d,
-                        'z_score_3d' => $zScore3d,
-                        'r3' => $momentum['r3'],
-                        'r5' => $momentum['r5'],
-                        'r15' => $momentum['r15'],
-                        'funnel_id' => $funnel->funnel_id,
-                        'source_job' => 'funnel_alert',
-                        'candle' => $candle,
-                        'open_time' => $lastOpenTime,
-                    ]);
-
-                    $logs[] = $alertLog;
-                } else {
-                    $funnel->delete();
+                    if (count($closes) >= 18) {
+                        $zScore3d = $this->calculateZScore(array_slice($closes, -18));
+                    }
                 }
+
+                $momentum = $this->calculateMomentum($klines);
+
+                $candle = match (true) {
+                    $lastOpenPrice > $closePrice => 1,
+                    $lastOpenPrice < $closePrice => 0,
+                    default => null,
+                };
+
+                $existingLog = AlertLog::selectRaw('MAX(high) as max_high, MIN(low) as min_low')
+                    ->where('alert_configuration_id', $config->id)
+                    ->where('symbol', $coin)
+                    ->where('source_job', 'funnel_alert')
+                    ->first();
+
+                // ---------------------------------------------------------
+                // STEP 3: Entry in DB
+                // ---------------------------------------------------------
+                $alertLog = AlertLog::create([
+                    'alert_configuration_id' => $config->id,
+                    'parent_id' => $funnel->parent_id,
+                    'symbol' => $coin,
+                    'performance' => $performance,
+                    'price_from' => $openPrice,
+                    'price_to' => $closePrice,
+                    'high' => max($lastHighPrice, (float) ($existingLog->max_high ?? $lastHighPrice)),
+                    'low' => min($lastLowPrice, (float) ($existingLog->min_low ?? $lastLowPrice)),
+                    'volume' => $lastVoulme,
+                    'z_score_1d' => $zScore1d,
+                    'z_score_2d' => $zScore2d,
+                    'z_score_3d' => $zScore3d,
+                    'r3' => $momentum['r3'],
+                    'r5' => $momentum['r5'],
+                    'r15' => $momentum['r15'],
+                    'funnel_id' => $funnel->funnel_id,
+                    'source_job' => 'funnel_alert',
+                    'candle' => $candle,
+                    'open_time' => $lastOpenTime,
+                ]);
+
+                $logs[] = $alertLog;
+                Log::channel('funnel_alert')->info('After Push Logs Count: '.count($logs));
+
+                // ---------------------------------------------------------
+                // STEP 4: Trigger notification
+                // ---------------------------------------------------------
+                if (! empty($logs) && $config->notifyUsers->isNotEmpty()) {
+
+                    foreach ($config->notifyUsers as $user) {
+                        Log::channel('funnel_alert')->info("Sending notification to user {$user->id}");
+
+                        try {
+
+                            // Send Email Notification
+                            $user->notify(new CoinPerformanceAlert($logs));
+
+                            foreach ($logs as $log) {
+
+                                AlertUserNotificationLog::create([
+                                    'alert_log_id' => $log->id,
+                                    'user_id' => $user->id,
+                                    'email_sent' => 1,
+                                    'sent_at' => now(),
+                                ]);
+                            }
+
+                            Log::channel('funnel_alert')->info("Notification sent to User {$user->id}");
+
+                        } catch (Throwable $mailError) {
+                            Log::channel('funnel_alert')->error($mailError);
+
+                            Log::channel('funnel_alert')->error('Notification Failed', [
+                                'user_id' => $user->id,
+                                'error' => $mailError->getMessage(),
+                            ]);
+                        }
+                    }
+                }
+            
+
+                // ---------------------------------------------------------
+                // STEP 5: Remove coin from funnel after the alert is logged.
+                // ---------------------------------------------------------
+                $funnel->delete();
+
+                Log::channel('funnel_alert')->info('Coin removed from funnel after 30% drop');
 
             } catch (\Exception $error) {
 
@@ -175,42 +239,6 @@ class FunnelAlertConfigurationJob implements ShouldQueue
                     'error' => $error->getMessage(),
                 ]);
             }
-
-            /**
-             * ============================
-             * SEND NOTIFICATION TO USERS
-             * ============================
-             */
-
-            //            if (! empty($logs) && $config->notifyUsers->isNotEmpty()) {
-            //
-            //                foreach ($config->notifyUsers as $user) {
-            //
-            //                    try {
-            //
-            //                        $user->notify(new CoinPerformanceAlert($logs));
-            //
-            //                        foreach ($logs as $log) {
-            //
-            //                            AlertUserNotificationLog::create([
-            //                                'alert_log_id' => $log->id,
-            //                                'user_id' => $user->id,
-            //                                'email_sent' => 1,
-            //                                'sent_at' => now()
-            //                            ]);
-            //                        }
-            //
-            //                    } catch (\Exception $mailError) {
-            //
-            //                        Log::channel('funnel_alert')->error("Mail failed", [
-            //                            'user_id' => $user->id,
-            //                            'error' => $mailError->getMessage()
-            //                        ]);
-            //                    }
-            //                }
-            //
-            //                Log::channel('funnel_alert')->info("Config ID {$config->id} notifications sent");
-            //            }
 
         } finally {
 

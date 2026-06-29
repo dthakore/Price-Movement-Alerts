@@ -41,7 +41,6 @@
         </a>
     </div>
         <div class="card shadow-sm mb-4">
-        <div class="card-header fw-bold">Create New Alert</div>
 {{--        <div class="card-header fw-bold">Create New Alert</div>--}}
         <div class="card-body">
             <form method="POST" action="{{ route('alerts.config.store') }}">
@@ -122,7 +121,25 @@
                             <option value="15">15 Min</option>
                         </select>
                     </div>
+<div class="col-md-2">
+   <label class="form-label">Type</label>
+    <select name="type" id="type" class="form-control">
+        <option value="">Select Type</option>
+        <option value="normal">Normal</option>
+        <option value="high reversion">High Reversion</option>
+    </select>
+</div>
 
+
+<div class="col-md-2" id="reversion_section" style="display:none;">
+    <label class="form-label">Reversion %</label>
+    <input
+        type="number"
+        step="0.01"
+        name="reversion_percentage"
+        id="reversion_percentage"
+        class="form-control">
+</div>
                     <div class="col-md-1 d-flex align-items-end">
                         <button class="btn btn-primary w-100">
                             <i class="bi bi-plus-circle"></i>
@@ -512,6 +529,28 @@
                 });
 
         });
+
+        $(document).ready(function() {
+
+    $('#type').change(function() {
+
+        if ($(this).val() == 'high reversion') {
+
+            $('#reversion_section').show();
+
+            $('#reversion_percentage').prop('required', true);
+
+        } else {
+
+            $('#reversion_section').hide();
+
+            $('#reversion_percentage').prop('required', false);
+
+            $('#reversion_percentage').val('');
+        }
+    });
+
+});
     </script>
 
 
